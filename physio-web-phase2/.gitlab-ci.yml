@@ -1,0 +1,49 @@
+stages:
+  - publish
+  - deploy
+
+
+variables:
+  TAG_LATEST: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_NAME:latest
+  TAG_COMMIT_DEPRICATED: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_NAME:$CI_COMMIT_SHORT_SHA
+  TAG_COMMIT: $REGISTRY_NAME:$CONTAINER_NAME
+  
+publish:
+  image: docker
+  stage: publish
+  services:
+    - docker:dind
+  script:
+    - docker build -t $TAG_COMMIT .
+    - docker login -u $REGISTRY_USER -p $REGISTRY_PASS
+    - docker push $TAG_COMMIT
+    #- docker push $TAG_LATEST
+  only: 
+    - stage
+    - main
+
+
+deploy-stage:
+  image: alpine:latest
+  stage: deploy
+  tags:
+    - zlserver1
+  script:
+    - chmod og= $ID_RSA
+    - apk update && apk add openssh-client
+    - echo $ID_RSA 
+    # - echo $CI_BUILD_TOKEN $CI_REGISTRY
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker login -u $REGISTRY_USER -p $REGISTRY_PASS"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker container rm -f $CONTAINER_NAME || true"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker rmi -f $TAG_COMMIT"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker pull $TAG_COMMIT"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker run -d -p $DOCKER_PORT:3000 --restart unless-stopped --name $CONTAINER_NAME $TAG_COMMIT"
+  environment:
+    name: staging
+    url: http://139.59.37.77
+  only:
+    - stage
+    - main
+  
+
+
